@@ -28,6 +28,7 @@ crates/teranode-client/src/proto/*.rs
 *.swp
 *.swo
 *~
+.idea/
 
 # OS
 .DS_Store
