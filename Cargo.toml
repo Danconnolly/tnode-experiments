@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/teranode-client",
+    "crates/tnode-lab",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/tnode-experiments"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.41", features = ["full"] }
+tokio-stream = "0.1"
+
+# gRPC
+tonic = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+[workspace.dependencies.teranode-client]
+path = "crates/teranode-client"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
