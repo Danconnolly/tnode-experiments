@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "crates/teranode-client",
     "crates/tnode-lab",
+    "crates/p2p-protocol",
+    "crates/p2p-lab",
 ]
 
 [workspace.package]
@@ -40,8 +42,20 @@ dotenvy = "0.15"
 # Bitcoin
 bitcoinsv = "0.4.1"
 
+# libp2p
+libp2p = { version = "0.54", features = ["tokio", "tcp", "noise", "yamux", "gossipsub", "kad", "identify", "dns", "mdns", "macros", "serde"] }
+libp2p-identity = { version = "0.2", features = ["ed25519"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+futures = "0.3"
+async-trait = "0.1"
+ed25519-dalek = "2.1"
+
 [workspace.dependencies.teranode-client]
 path = "crates/teranode-client"
+
+[workspace.dependencies.p2p-protocol]
+path = "crates/p2p-protocol"
 
 [profile.release]
 opt-level = 3

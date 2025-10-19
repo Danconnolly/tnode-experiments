@@ -1,0 +1,37 @@
+[package]
+name = "p2p-protocol"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+# libp2p
+libp2p = { workspace = true }
+libp2p-identity = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Utilities
+hex = { workspace = true }
+ed25519-dalek = { workspace = true }
+
+[lib]
+name = "p2p_protocol"
+path = "src/lib.rs"
