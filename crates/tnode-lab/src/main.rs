@@ -9,7 +9,8 @@ use tracing::info;
 #[command(name = "tnode")]
 #[command(about = "CLI tool for BSV Teranode experiments", long_about = None)]
 struct Cli {
-    /// Teranode endpoint (IP:port format, e.g., "127.0.0.1:8087")
+    /// Teranode blockchain service endpoint (IP:port format, e.g., "127.0.0.1:8087")
+    /// Note: This is the blockchain service component of a full Teranode system
     /// Can be set via ENDPOINT environment variable or .env file
     #[arg(short, long, env = "ENDPOINT", default_value = "127.0.0.1:8087")]
     endpoint: String,

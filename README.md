@@ -43,26 +43,44 @@ cargo build
 
 ### CLI Tool
 
-The `tnode` CLI provides various commands for interacting with Teranode:
+The `tnode` CLI provides commands for interacting with the Teranode blockchain service.
+
+**Important**: The endpoint should point to the **blockchain service component** of a full Teranode system (default port: 8087).
+
+#### Configuration
+
+You can configure the endpoint in three ways (in order of precedence):
+
+1. Command-line argument: `--endpoint`
+2. Environment variable: `ENDPOINT`
+3. `.env` file in project root
+
+```bash
+# Copy the example .env file and customize it
+cp .env.example .env
+# Edit .env to set your blockchain service endpoint
+```
+
+#### Commands
 
 ```bash
 # Build the CLI
 cargo build --release
 
-# Run with default endpoint (localhost:50051)
-./target/release/tnode ping
+# Get the best (tip) block header (uses default endpoint 127.0.0.1:8087)
+./target/release/tnode getbestblock
 
-# Specify a custom endpoint
-./target/release/tnode --endpoint http://teranode.example.com:50051 ping
+# Specify a custom endpoint (IP:port format)
+./target/release/tnode --endpoint 192.168.1.100:8087 getbestblock
 
-# Run queries
-./target/release/tnode query <QUERY_TYPE>
-
-# Run tests
-./target/release/tnode test [TEST_SUITE]
+# Or using environment variable
+ENDPOINT=192.168.1.100:8087 ./target/release/tnode getbestblock
 
 # Enable verbose logging
-./target/release/tnode --verbose ping
+./target/release/tnode --verbose getbestblock
+
+# Use alias command format
+./target/release/tnode get-best-block
 ```
 
 ### Library Usage
@@ -82,8 +100,13 @@ use teranode_client::TeranodeClient;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let client = TeranodeClient::connect("http://localhost:50051").await?;
-    // Use client to interact with Teranode
+    // Connect to the Teranode blockchain service
+    let mut client = TeranodeClient::connect("http://127.0.0.1:8087").await?;
+
+    // Get the best block header
+    let response = client.get_best_block_header().await?;
+    println!("Best block height: {}", response.height);
+
     Ok(())
 }
 ```
