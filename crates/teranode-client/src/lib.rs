@@ -5,26 +5,62 @@
 
 pub mod proto {
     //! Generated protobuf types and gRPC client stubs
-    //!
-    //! The actual modules will be included here once proto files are added
-    //! and compiled via build.rs
+
+    // Re-export commonly used types from model
+    pub mod model {
+        include!("proto/model.rs");
+    }
+
+    // Re-export blockchain API types
+    pub mod blockchain_api {
+        include!("proto/blockchain_api.rs");
+    }
 }
 
 pub mod client {
     //! High-level client interface for Teranode
 
-    use anyhow::Result;
+    use crate::proto::blockchain_api::{
+        blockchain_api_client::BlockchainApiClient, GetBlockHeaderResponse,
+    };
+    use anyhow::{Context, Result};
+    use tonic::transport::Channel;
 
     /// Main client for interacting with Teranode
     pub struct TeranodeClient {
-        // gRPC client connections will be added here
+        blockchain_client: BlockchainApiClient<Channel>,
     }
 
     impl TeranodeClient {
         /// Create a new Teranode client
-        pub async fn connect(_endpoint: impl AsRef<str>) -> Result<Self> {
-            // Implementation will be added once proto files are available
-            todo!("Implement client connection")
+        ///
+        /// # Arguments
+        /// * `endpoint` - The gRPC endpoint (e.g., "http://127.0.0.1:50051")
+        pub async fn connect(endpoint: impl AsRef<str>) -> Result<Self> {
+            let endpoint_str = endpoint.as_ref();
+            let channel = Channel::from_shared(endpoint_str.to_string())
+                .context("Invalid endpoint URL")?
+                .connect()
+                .await
+                .context("Failed to connect to Teranode")?;
+
+            let blockchain_client = BlockchainApiClient::new(channel);
+
+            Ok(Self { blockchain_client })
+        }
+
+        /// Get the best (tip) block header
+        ///
+        /// # Returns
+        /// The header of the current best block in the blockchain
+        pub async fn get_best_block_header(&mut self) -> Result<GetBlockHeaderResponse> {
+            let response = self
+                .blockchain_client
+                .get_best_block_header(())
+                .await
+                .context("Failed to get best block header")?;
+
+            Ok(response.into_inner())
         }
     }
 }

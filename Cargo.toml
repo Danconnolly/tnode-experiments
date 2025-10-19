@@ -31,7 +31,14 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # CLI
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Utilities
+hex = "0.4"
+dotenvy = "0.15"
+
+# Bitcoin
+bitcoinsv = "0.4.1"
 
 [workspace.dependencies.teranode-client]
 path = "crates/teranode-client"
