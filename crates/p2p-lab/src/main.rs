@@ -119,9 +119,13 @@ async fn main() -> Result<()> {
     // Build configuration
     let mut config = P2PConfig::new(cli.network)
         .with_listen_addresses(listen_addresses)
-        .with_bootstrap_peers(bootstrap_peers)
         .with_mdns(!cli.no_mdns)
         .with_kad_mode(kad_mode);
+
+    // Only set bootstrap peers if the list is not empty
+    if !bootstrap_peers.is_empty() {
+        config = config.with_bootstrap_peers(bootstrap_peers);
+    }
 
     if let Some(key_file) = cli.key_file {
         config = config.with_key_file(key_file);

@@ -45,7 +45,7 @@ impl Default for P2PConfig {
             network: "mainnet".to_string(),
             protocol_version: "1.0.0".to_string(),
             listen_addresses: vec![],
-            bootstrap_peers: vec![],
+            bootstrap_peers: P2PConfig::default_bootstrap_peers(),
             key_file: None,
             private_key_hex: None,
             enable_mdns: true,
@@ -55,6 +55,30 @@ impl Default for P2PConfig {
 }
 
 impl P2PConfig {
+    /// Get the default libp2p bootstrap peers
+    fn default_bootstrap_peers() -> Vec<Multiaddr> {
+        vec![
+            "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN"
+                .parse()
+                .expect("invalid bootstrap peer address"),
+            "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa"
+                .parse()
+                .expect("invalid bootstrap peer address"),
+            "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb"
+                .parse()
+                .expect("invalid bootstrap peer address"),
+            "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt"
+                .parse()
+                .expect("invalid bootstrap peer address"),
+            "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
+                .parse()
+                .expect("invalid bootstrap peer address"),
+            "/ip4/104.131.131.82/udp/4001/quic/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
+                .parse()
+                .expect("invalid bootstrap peer address"),
+        ]
+    }
+
     /// Create a new configuration with required parameters
     pub fn new(network: String) -> Self {
         Self {
@@ -131,5 +155,26 @@ mod tests {
         assert_eq!(config.network, "regtest");
         assert!(!config.enable_mdns);
         assert_eq!(config.kad_mode, KadMode::Client);
+    }
+
+    #[test]
+    fn test_default_bootstrap_peers() {
+        let config = P2PConfig::default();
+
+        // Should have 6 default bootstrap peers
+        assert_eq!(config.bootstrap_peers.len(), 6);
+
+        // Verify we have both DNS and direct IP bootstrap peers
+        let has_dnsaddr = config
+            .bootstrap_peers
+            .iter()
+            .any(|addr| addr.to_string().contains("dnsaddr"));
+        let has_direct_ip = config
+            .bootstrap_peers
+            .iter()
+            .any(|addr| addr.to_string().contains("104.131.131.82"));
+
+        assert!(has_dnsaddr, "should have DNS bootstrap peers");
+        assert!(has_direct_ip, "should have direct IP bootstrap peers");
     }
 }
