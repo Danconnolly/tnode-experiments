@@ -43,8 +43,8 @@ dotenvy = "0.15"
 bitcoinsv = "0.4.1"
 
 # libp2p
-libp2p = { version = "0.54", features = ["tokio", "tcp", "noise", "yamux", "gossipsub", "kad", "identify", "dns", "mdns", "macros", "serde"] }
-libp2p-identity = { version = "0.2", features = ["ed25519"] }
+libp2p = { version = "0.54", features = ["tokio", "tcp", "noise", "yamux", "gossipsub", "kad", "identify", "dns", "mdns", "macros", "serde", "rsa"] }
+libp2p-identity = { version = "0.2", features = ["ed25519", "rsa"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
