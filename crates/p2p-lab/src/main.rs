@@ -79,8 +79,8 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum ListenTarget {
-    /// Listen to node-status messages
-    Status {
+    /// Listen to block messages
+    Blocks {
         /// Run duration in seconds (0 = run indefinitely)
         #[arg(short, long, default_value = "0")]
         duration: u64,
@@ -229,15 +229,15 @@ async fn run_list_peers(
 
 async fn run_listen(client: P2PClient, target: ListenTarget) -> Result<()> {
     match target {
-        ListenTarget::Status { duration } => {
-            listen_status(client, duration).await?;
+        ListenTarget::Blocks { duration } => {
+            listen_blocks(client, duration).await?;
         }
     }
     Ok(())
 }
 
-async fn listen_status(mut client: P2PClient, duration_secs: u64) -> Result<()> {
-    info!("Subscribing to node-status messages...");
+async fn listen_blocks(mut client: P2PClient, duration_secs: u64) -> Result<()> {
+    info!("Subscribing to block messages...");
 
     // Subscribe to messages before spawning the client
     let mut rx = client.subscribe_to_messages();
@@ -249,7 +249,7 @@ async fn listen_status(mut client: P2PClient, duration_secs: u64) -> Result<()> 
         }
     });
 
-    info!("Listening for node-status messages...");
+    info!("Listening for block messages...");
 
     let start = std::time::Instant::now();
     let run_duration = if duration_secs == 0 {
@@ -269,8 +269,8 @@ async fn listen_status(mut client: P2PClient, duration_secs: u64) -> Result<()> 
 
         match tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
             Ok(Ok(msg)) => {
-                // Check if this is a node-status message
-                if msg.topic.contains("node_status") || msg.topic.contains("node-status") {
+                // Check if this is a blocks message
+                if msg.topic.contains("blocks") {
                     println!(
                         "[{}] {}: {}",
                         msg.topic,
