@@ -5,5 +5,8 @@
 # Blockchain service endpoint (IP:port format)
 blockchain_endpoint: "127.0.0.1:8087"
 
+# Peer service endpoint (IP:port format)
+peer_endpoint: "127.0.0.1:8088"
+
 # Enable verbose logging
 verbose: false

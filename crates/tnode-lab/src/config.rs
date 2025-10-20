@@ -11,6 +11,9 @@ pub struct Config {
     /// Blockchain service endpoint
     pub blockchain_endpoint: Option<String>,
 
+    /// Peer service endpoint
+    pub peer_endpoint: Option<String>,
+
     /// Enable verbose logging
     pub verbose: Option<bool>,
 }
@@ -71,6 +74,9 @@ impl Config {
         if other.blockchain_endpoint.is_some() {
             self.blockchain_endpoint = other.blockchain_endpoint.clone();
         }
+        if other.peer_endpoint.is_some() {
+            self.peer_endpoint = other.peer_endpoint.clone();
+        }
         if other.verbose.is_some() {
             self.verbose = other.verbose;
         }
@@ -107,11 +113,13 @@ verbose: true
     fn test_config_merge() {
         let mut base = Config {
             blockchain_endpoint: Some("127.0.0.1:8087".to_string()),
+            peer_endpoint: None,
             verbose: Some(false),
         };
 
         let override_config = Config {
             blockchain_endpoint: Some("127.0.0.1:9000".to_string()),
+            peer_endpoint: None,
             verbose: None,
         };
 

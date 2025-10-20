@@ -24,6 +24,12 @@ struct Cli {
     #[arg(short = 'b', long, env = "BLOCKCHAIN_ENDPOINT")]
     blockchain_endpoint: Option<String>,
 
+    /// Teranode peer service endpoint (IP:port format, e.g., "127.0.0.1:8088")
+    /// Note: This is the peer service component of a full Teranode system
+    /// Can be set via PEER_ENDPOINT environment variable or config file
+    #[arg(short = 'p', long, env = "PEER_ENDPOINT")]
+    peer_endpoint: Option<String>,
+
     /// Enable verbose logging
     #[arg(short, long, env = "VERBOSE")]
     verbose: bool,
@@ -37,6 +43,9 @@ enum Commands {
     /// Get the best (tip) block header from the blockchain
     #[command(alias = "getbestblock")]
     GetBestBlock,
+
+    /// Get the list of connected peers
+    GetPeers,
 }
 
 /// Parse endpoint and add default port 8087 if not specified
@@ -151,6 +160,11 @@ async fn main() -> Result<()> {
         .or_else(|| config.as_ref().and_then(|c| c.blockchain_endpoint.clone()))
         .unwrap_or_else(|| "127.0.0.1:8087".to_string());
 
+    let peer_endpoint = cli
+        .peer_endpoint
+        .or_else(|| config.as_ref().and_then(|c| c.peer_endpoint.clone()))
+        .unwrap_or_else(|| "127.0.0.1:8088".to_string());
+
     let verbose = cli.verbose || config.as_ref().and_then(|c| c.verbose).unwrap_or(false);
 
     // Initialize tracing
@@ -233,6 +247,72 @@ async fn main() -> Result<()> {
                 );
                 println!("  Bits: 0x{:08x}", header.bits());
                 println!("  Nonce: {}", header.nonce());
+            }
+        }
+        Commands::GetPeers => {
+            // Parse peer endpoint
+            let peer_endpoint_parsed = parse_endpoint(&peer_endpoint);
+            let peer_endpoint_url = if peer_endpoint_parsed.starts_with("http://")
+                || peer_endpoint_parsed.starts_with("https://")
+            {
+                peer_endpoint_parsed.clone()
+            } else {
+                format!("http://{}", peer_endpoint_parsed)
+            };
+
+            info!("Connecting to peer service: {}", peer_endpoint_url);
+
+            let mut client = teranode_client::TeranodeClient::connect_with_endpoints(
+                None::<String>,
+                Some(&peer_endpoint_url),
+            )
+            .await?;
+
+            let response = client.get_peers().await?;
+
+            println!("Connected Peers: {} total\n", response.peers.len());
+
+            if response.peers.is_empty() {
+                println!("No peers connected.");
+            } else {
+                for (i, peer) in response.peers.iter().enumerate() {
+                    println!("Peer #{}", i + 1);
+                    println!("  ID: {}", peer.id);
+                    println!("  Address: {}", peer.addr);
+                    if !peer.addr_local.is_empty() {
+                        println!("  Local Address: {}", peer.addr_local);
+                    }
+                    println!("  Inbound: {}", peer.inbound);
+                    if peer.version > 0 {
+                        println!("  Version: {}", peer.version);
+                    }
+                    if !peer.sub_ver.is_empty() {
+                        println!("  Sub-version: {}", peer.sub_ver);
+                    }
+                    if peer.current_height > 0 {
+                        println!("  Current Height: {}", peer.current_height);
+                    }
+                    if peer.starting_height > 0 {
+                        println!("  Starting Height: {}", peer.starting_height);
+                    }
+                    if peer.bytes_sent > 0 {
+                        println!("  Bytes Sent: {}", peer.bytes_sent);
+                    }
+                    if peer.bytes_received > 0 {
+                        println!("  Bytes Received: {}", peer.bytes_received);
+                    }
+                    if peer.conn_time > 0 {
+                        println!(
+                            "  Connection Time: {} ({})",
+                            peer.conn_time,
+                            format_timestamp(peer.conn_time as u32)
+                        );
+                    }
+                    if peer.ping_time > 0 {
+                        println!("  Ping Time: {} ms", peer.ping_time);
+                    }
+                    println!();
+                }
             }
         }
     }
