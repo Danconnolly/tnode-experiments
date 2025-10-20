@@ -11,9 +11,14 @@ use tracing::info;
 struct Cli {
     /// Teranode blockchain service endpoint (IP:port format, e.g., "127.0.0.1:8087")
     /// Note: This is the blockchain service component of a full Teranode system
-    /// Can be set via ENDPOINT environment variable or .env file
-    #[arg(short, long, env = "ENDPOINT", default_value = "127.0.0.1:8087")]
-    endpoint: String,
+    /// Can be set via BLOCKCHAIN_ENDPOINT environment variable or .env file
+    #[arg(
+        short = 'b',
+        long,
+        env = "BLOCKCHAIN_ENDPOINT",
+        default_value = "127.0.0.1:8087"
+    )]
+    blockchain_endpoint: String,
 
     /// Enable verbose logging
     #[arg(short, long)]
@@ -136,7 +141,7 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     // Parse endpoint and add default port if not specified
-    let endpoint = parse_endpoint(&cli.endpoint);
+    let endpoint = parse_endpoint(&cli.blockchain_endpoint);
 
     // Convert IP:port to URL format for gRPC
     let endpoint_url = if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
