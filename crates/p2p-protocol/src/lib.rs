@@ -7,7 +7,7 @@ pub mod config;
 pub mod error;
 pub mod peer;
 
-pub use client::P2PClient;
+pub use client::{GossipMessage, P2PClient};
 pub use config::{KadMode, P2PConfig};
 pub use error::{P2PError, Result};
 pub use peer::PeerInfo;

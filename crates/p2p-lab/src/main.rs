@@ -68,8 +68,23 @@ enum Commands {
         #[arg(short, long, default_value = "5")]
         interval: u64,
     },
+    /// Listen to gossipsub messages
+    Listen {
+        #[command(subcommand)]
+        target: ListenTarget,
+    },
     /// Show information about the local node
     Info,
+}
+
+#[derive(Subcommand)]
+enum ListenTarget {
+    /// Listen to node-status messages
+    Status {
+        /// Run duration in seconds (0 = run indefinitely)
+        #[arg(short, long, default_value = "0")]
+        duration: u64,
+    },
 }
 
 #[tokio::main]
@@ -151,6 +166,9 @@ async fn main() -> Result<()> {
         } => {
             run_list_peers(client, connected, teranode, duration, interval).await?;
         }
+        Commands::Listen { target } => {
+            run_listen(client, target).await?;
+        }
         Commands::Info => {
             show_info(&client);
         }
@@ -205,6 +223,72 @@ async fn run_list_peers(
 
     info!("Note: Full peer listing with running event loop requires refactoring to use channels");
     info!("The current implementation demonstrates the structure but needs async communication");
+
+    Ok(())
+}
+
+async fn run_listen(client: P2PClient, target: ListenTarget) -> Result<()> {
+    match target {
+        ListenTarget::Status { duration } => {
+            listen_status(client, duration).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn listen_status(mut client: P2PClient, duration_secs: u64) -> Result<()> {
+    info!("Subscribing to node-status messages...");
+
+    // Subscribe to messages before spawning the client
+    let mut rx = client.subscribe_to_messages();
+
+    // Spawn the event loop in a background task
+    tokio::spawn(async move {
+        if let Err(e) = client.run().await {
+            tracing::error!("P2P client error: {}", e);
+        }
+    });
+
+    info!("Listening for node-status messages...");
+
+    let start = std::time::Instant::now();
+    let run_duration = if duration_secs == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(duration_secs))
+    };
+
+    loop {
+        // Check if we should exit
+        if let Some(max_duration) = run_duration {
+            if start.elapsed() >= max_duration {
+                info!("Listen duration completed");
+                break;
+            }
+        }
+
+        match tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
+            Ok(Ok(msg)) => {
+                // Check if this is a node-status message
+                if msg.topic.contains("node_status") || msg.topic.contains("node-status") {
+                    println!(
+                        "[{}] {}: {}",
+                        msg.topic,
+                        msg.source,
+                        String::from_utf8_lossy(&msg.data)
+                    );
+                }
+            }
+            Ok(Err(_)) => {
+                // Channel closed
+                info!("Message channel closed");
+                break;
+            }
+            Err(_) => {
+                // Timeout, just continue
+            }
+        }
+    }
 
     Ok(())
 }

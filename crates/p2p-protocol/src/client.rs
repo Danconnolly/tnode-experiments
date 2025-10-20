@@ -9,13 +9,23 @@ use libp2p::{
 };
 use libp2p_identity::Keypair;
 use std::{collections::HashMap, fs, time::Duration};
+use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
+
+/// A GossipSub message event
+#[derive(Clone, Debug)]
+pub struct GossipMessage {
+    pub topic: String,
+    pub data: Vec<u8>,
+    pub source: PeerId,
+}
 
 /// Main P2P client for joining the Teranode network
 pub struct P2PClient {
     swarm: Swarm<TeranodeBehaviour>,
     peers: HashMap<PeerId, PeerInfo>,
     config: P2PConfig,
+    message_tx: broadcast::Sender<GossipMessage>,
 }
 
 /// Combined network behavior for Teranode P2P
@@ -137,10 +147,14 @@ impl P2PClient {
                 .with_idle_connection_timeout(Duration::from_secs(60)),
         );
 
+        // Create broadcast channel for gossipsub messages
+        let (message_tx, _) = broadcast::channel(256);
+
         Ok(Self {
             swarm,
             peers: HashMap::new(),
             config,
+            message_tx,
         })
     }
 
@@ -315,6 +329,16 @@ impl P2PClient {
                     "Received message from {}: {:?} on topic {:?}",
                     propagation_source, message_id, message.topic
                 );
+
+                // Broadcast the message to subscribers
+                let msg = GossipMessage {
+                    topic: message.topic.to_string(),
+                    data: message.data.clone(),
+                    source: propagation_source,
+                };
+
+                // Ignore send error if no receivers
+                let _ = self.message_tx.send(msg);
             }
             gossipsub::Event::Subscribed { peer_id, topic } => {
                 info!("Peer {} subscribed to topic: {:?}", peer_id, topic);
@@ -435,6 +459,11 @@ impl P2PClient {
     /// Get the local peer ID
     pub fn local_peer_id(&self) -> &PeerId {
         self.swarm.local_peer_id()
+    }
+
+    /// Subscribe to all gossipsub messages
+    pub fn subscribe_to_messages(&self) -> broadcast::Receiver<GossipMessage> {
+        self.message_tx.subscribe()
     }
 
     /// Load or generate a keypair based on configuration
