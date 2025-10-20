@@ -1,0 +1,9 @@
+# Teranode CLI Configuration File
+# This file configures default values for the tnode CLI tool
+# Values can be overridden by environment variables or command-line arguments
+
+# Blockchain service endpoint (IP:port format)
+blockchain_endpoint: "127.0.0.1:8087"
+
+# Enable verbose logging
+verbose: false

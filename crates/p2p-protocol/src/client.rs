@@ -209,13 +209,21 @@ impl P2PClient {
                         send_back_addr, local_addr
                     );
                 }
-                SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id), error, .. } => {
+                SwarmEvent::OutgoingConnectionError {
+                    peer_id: Some(peer_id),
+                    error,
+                    ..
+                } => {
                     warn!("Outgoing connection error to {}: {}", peer_id, error);
                     if let Some(peer) = self.peers.get_mut(&peer_id) {
                         peer.increment_attempts();
                     }
                 }
-                SwarmEvent::OutgoingConnectionError { peer_id: None, error, .. } => {
+                SwarmEvent::OutgoingConnectionError {
+                    peer_id: None,
+                    error,
+                    ..
+                } => {
                     warn!("Outgoing connection error (unknown peer): {}", error);
                 }
                 SwarmEvent::IncomingConnectionError {

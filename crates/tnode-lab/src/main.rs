@@ -1,27 +1,31 @@
 //! Teranode CLI - Command-line tool for interacting with Teranode instances
 
+mod config;
+
 use anyhow::Result;
 use bitcoinsv::bitcoin::BlockHeader;
 use clap::{Parser, Subcommand};
+use config::Config;
 use tracing::info;
 
 #[derive(Parser)]
 #[command(name = "tnode")]
 #[command(about = "CLI tool for BSV Teranode experiments", long_about = None)]
 struct Cli {
+    /// Path to configuration file (YAML format)
+    /// If not specified, searches for config in default locations:
+    /// ~/.config/tnode/config.yml or ./tnode.yml
+    #[arg(short = 'c', long)]
+    config: Option<String>,
+
     /// Teranode blockchain service endpoint (IP:port format, e.g., "127.0.0.1:8087")
     /// Note: This is the blockchain service component of a full Teranode system
-    /// Can be set via BLOCKCHAIN_ENDPOINT environment variable or .env file
-    #[arg(
-        short = 'b',
-        long,
-        env = "BLOCKCHAIN_ENDPOINT",
-        default_value = "127.0.0.1:8087"
-    )]
-    blockchain_endpoint: String,
+    /// Can be set via BLOCKCHAIN_ENDPOINT environment variable or config file
+    #[arg(short = 'b', long, env = "BLOCKCHAIN_ENDPOINT")]
+    blockchain_endpoint: Option<String>,
 
     /// Enable verbose logging
-    #[arg(short, long)]
+    #[arg(short, long, env = "VERBOSE")]
     verbose: bool,
 
     #[command(subcommand)]
@@ -130,9 +134,28 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // Load configuration file
+    // Precedence: CLI args > Environment variables > Config file > Defaults
+    let config = if let Some(config_path) = &cli.config {
+        // User specified a config file
+        Some(Config::from_file(config_path)?)
+    } else {
+        // Try to load from default locations
+        Config::from_default_locations()?
+    };
+
+    // Merge configuration with CLI arguments
+    // CLI arguments and env vars (already parsed by clap) take precedence
+    let blockchain_endpoint = cli
+        .blockchain_endpoint
+        .or_else(|| config.as_ref().and_then(|c| c.blockchain_endpoint.clone()))
+        .unwrap_or_else(|| "127.0.0.1:8087".to_string());
+
+    let verbose = cli.verbose || config.as_ref().and_then(|c| c.verbose).unwrap_or(false);
+
     // Initialize tracing
     let subscriber = tracing_subscriber::fmt()
-        .with_max_level(if cli.verbose {
+        .with_max_level(if verbose {
             tracing::Level::DEBUG
         } else {
             tracing::Level::WARN
@@ -141,7 +164,7 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     // Parse endpoint and add default port if not specified
-    let endpoint = parse_endpoint(&cli.blockchain_endpoint);
+    let endpoint = parse_endpoint(&blockchain_endpoint);
 
     // Convert IP:port to URL format for gRPC
     let endpoint_url = if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
