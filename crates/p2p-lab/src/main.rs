@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use p2p_protocol::{KadMode, P2PClient, P2PConfig};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tokio::time;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
@@ -77,6 +79,10 @@ enum Commands {
     Topic {
         /// Topic name to query
         topic: String,
+
+        /// Wait duration in seconds for peer discovery
+        #[arg(short, long, default_value = "5")]
+        wait: u64,
     },
     /// Show information about the local node
     Info,
@@ -174,8 +180,8 @@ async fn main() -> Result<()> {
         Commands::Listen { target } => {
             run_listen(client, target).await?;
         }
-        Commands::Topic { topic } => {
-            show_topic_info(&client, &topic);
+        Commands::Topic { topic, wait } => {
+            query_topic(client, &topic, wait).await?;
         }
         Commands::Info => {
             show_info(&client);
@@ -301,15 +307,58 @@ async fn listen_blocks(mut client: P2PClient, duration_secs: u64) -> Result<()> 
     Ok(())
 }
 
-fn show_topic_info(client: &P2PClient, topic: &str) {
-    // Construct the full topic name with protocol prefix
-    let full_topic = format!("{}/{}", client.protocol_id(), topic);
+async fn query_topic(client: P2PClient, topic: &str, wait_secs: u64) -> Result<()> {
+    // Store info we need before moving client
+    let protocol_id = client.protocol_id();
+    let full_topic = format!("{}/{}", protocol_id, topic);
+
+    info!("Starting P2P network for peer discovery...");
+
+    // Wrap client in Arc<Mutex> for shared access
+    let client_arc = Arc::new(Mutex::new(client));
+    let client_clone = Arc::clone(&client_arc);
+
+    // Spawn the event loop in a background task
+    tokio::spawn(async move {
+        let mut client = client_clone.lock().await;
+        if let Err(e) = client.run().await {
+            tracing::error!("P2P client error: {}", e);
+        }
+    });
+
+    // Poll for peer discovery with periodic updates
+    info!("Discovering peers on the network...");
+    let start = std::time::Instant::now();
+    let mut last_count = 0;
+
+    loop {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let elapsed = start.elapsed().as_secs();
+
+        if elapsed >= wait_secs {
+            break;
+        }
+
+        // Check current peer count
+        let client = client_arc.lock().await;
+        let peer_count = client.get_topic_peer_count(&full_topic);
+
+        if peer_count != last_count {
+            info!(
+                "Found {} peers on topic after {} seconds",
+                peer_count, elapsed
+            );
+            last_count = peer_count;
+        }
+    }
+
+    // Display final topic information
+    let client = client_arc.lock().await;
+    let peer_count = client.get_topic_peer_count(&full_topic);
 
     println!("\n=== Topic Information ===");
     println!("Topic: {}", topic);
     println!("Full Topic: {}", full_topic);
-
-    let peer_count = client.get_topic_peer_count(&full_topic);
     println!("Subscribed Peers: {}", peer_count);
 
     if peer_count > 0 {
@@ -319,8 +368,14 @@ fn show_topic_info(client: &P2PClient, topic: &str) {
             println!("  {}. {}", i + 1, peer_id);
         }
     } else {
-        println!("(No peers currently subscribed to this topic)");
+        println!("\n(No peers currently subscribed to this topic)");
+        println!("\nNote: This may indicate:");
+        println!("- No peers are publishing to this topic");
+        println!("- The network has not completed peer discovery yet");
+        println!("- Increase wait time with --wait flag");
     }
+
+    Ok(())
 }
 
 fn show_info(client: &P2PClient) {
