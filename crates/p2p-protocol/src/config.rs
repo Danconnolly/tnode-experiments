@@ -164,7 +164,7 @@ mod tests {
         // Should have 6 default bootstrap peers
         assert_eq!(config.bootstrap_peers.len(), 6);
 
-        // Verify we have both DNS and direct IP bootstrap peers
+        // Verify we have both dnsaddr and direct IP bootstrap peers
         let has_dnsaddr = config
             .bootstrap_peers
             .iter()
@@ -174,7 +174,7 @@ mod tests {
             .iter()
             .any(|addr| addr.to_string().contains("104.131.131.82"));
 
-        assert!(has_dnsaddr, "should have DNS bootstrap peers");
+        assert!(has_dnsaddr, "should have dnsaddr bootstrap peers");
         assert!(has_direct_ip, "should have direct IP bootstrap peers");
     }
 }

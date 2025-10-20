@@ -47,7 +47,8 @@ impl P2PClient {
         let peer_id = PeerId::from(keypair.public());
         info!("Local peer ID: {}", peer_id);
 
-        // Build the transport
+        // Build the transport with TCP support
+        // (QUIC requires additional configuration and complexity)
         let transport =
             tcp::tokio::Transport::default()
                 .upgrade(upgrade::Version::V1)
@@ -77,13 +78,24 @@ impl P2PClient {
         }
 
         // Add bootstrap peers to Kademlia
+        // Skip dnsaddr addresses as they need DNS resolution first
         for addr in &config.bootstrap_peers {
-            if let Some(peer_id) = addr.iter().find_map(|p| match p {
-                libp2p::multiaddr::Protocol::P2p(peer_id) => Some(peer_id),
-                _ => None,
-            }) {
-                kademlia.add_address(&peer_id, addr.clone());
-                info!("Added bootstrap peer: {}", peer_id);
+            let has_dnsaddr = addr
+                .iter()
+                .any(|p| matches!(p, libp2p::multiaddr::Protocol::Dnsaddr(_)));
+            if !has_dnsaddr {
+                if let Some(peer_id) = addr.iter().find_map(|p| match p {
+                    libp2p::multiaddr::Protocol::P2p(peer_id) => Some(peer_id),
+                    _ => None,
+                }) {
+                    kademlia.add_address(&peer_id, addr.clone());
+                    info!("Added bootstrap peer: {}", peer_id);
+                }
+            } else {
+                info!(
+                    "Skipping dnsaddr bootstrap peer (will be dialed by swarm): {}",
+                    addr
+                );
             }
         }
 
