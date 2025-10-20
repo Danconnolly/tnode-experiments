@@ -9,7 +9,8 @@ use libp2p::{
 };
 use libp2p_identity::Keypair;
 use std::{collections::HashMap, fs, time::Duration};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 /// A GossipSub message event
@@ -20,8 +21,67 @@ pub struct GossipMessage {
     pub source: PeerId,
 }
 
-/// Main P2P client for joining the Teranode network
+/// Handle to the P2P client actor.
+#[derive(Clone)]
 pub struct P2PClient {
+    outbox: mpsc::Sender<P2PActorMessage>,
+}
+
+impl P2PClient {
+    pub async fn new(config: P2PConfig) -> P2PResult<(JoinHandle<P2PResult<()>>, Self)> {
+        let (outbox, mut actor) = P2PClientActor::new(config).await?;
+        let j = tokio::task::spawn(async move { actor.run().await });
+        Ok((j, Self {
+            outbox
+        }))
+    }
+
+    /// Get the local peer ID
+    pub async fn local_peer_id(&self) -> PeerId {
+        let (tx, rx) = oneshot::channel();
+        self.outbox.send(P2PActorMessage::GetLocalPeerId {result: tx}).await.expect("P2P actor message");
+        rx.await.expect("local peer id should never fail")
+    }
+
+    /// Get known peers.
+    pub async fn get_peers(&self) -> Vec<PeerInfo> {
+        let (tx, rx) = oneshot::channel();
+        self.outbox.send(P2PActorMessage::GetPeers {result: tx}).await.expect("P2P actor message");
+        rx.await.expect("get_peers() should never fail")
+    }
+
+    /// Get connected peers.
+    pub async fn get_connected_peers(&self) -> Vec<PeerInfo> {
+        let (tx, rx) = oneshot::channel();
+        self.outbox.send(P2PActorMessage::GetConnectedPeers {result: tx}).await.expect("P2P actor message");
+        rx.await.expect("get_connected_peers() should never fail")
+    }
+
+    /// Get teranode peers.
+    pub async fn get_teranode_peers(&self) -> Vec<PeerInfo> {
+        let (tx, rx) = oneshot::channel();
+        self.outbox.send(P2PActorMessage::GetTeranodePeers {result: tx}).await.expect("P2P actor message");
+        rx.await.expect("get_teranode_peers() should never fail")
+    }
+
+    /// Stop the client
+    pub async fn stop(&self) {
+        self.outbox.send(P2PActorMessage::Stop).await.expect("P2P actor message");
+    }
+}
+
+/// Internal messages, sent between handle and actor
+enum P2PActorMessage {
+    Stop,
+    GetLocalPeerId { result: oneshot::Sender<PeerId> },
+    GetPeers { result: oneshot::Sender<Vec<PeerInfo>> },
+    GetConnectedPeers { result: oneshot::Sender<Vec<PeerInfo>> },
+    GetTeranodePeers { result: oneshot::Sender<Vec<PeerInfo>> },
+}
+
+/// Main P2P client actor for joining the Teranode network
+pub struct P2PClientActor {
+    inbox: mpsc::Receiver<P2PActorMessage>,
     swarm: Swarm<TeranodeBehaviour>,
     peers: HashMap<PeerId, PeerInfo>,
     config: P2PConfig,
@@ -37,9 +97,9 @@ struct TeranodeBehaviour {
     mdns: mdns::tokio::Behaviour,
 }
 
-impl P2PClient {
+impl P2PClientActor {
     /// Create a new P2P client with the given configuration
-    pub async fn new(config: P2PConfig) -> P2PResult<Self> {
+    async fn new(config: P2PConfig) -> P2PResult<(mpsc::Sender<P2PActorMessage>, Self)> {
         info!("Initializing P2P client for network: {}", config.network);
 
         // Load or generate keypair
@@ -154,19 +214,19 @@ impl P2PClient {
         // Create broadcast channel for gossipsub messages
         let (message_tx, _) = broadcast::channel(256);
 
-        Ok(Self {
+        // actor & handle comms
+        let (outbox, inbox) = mpsc::channel(10);
+        Ok((outbox, Self {
+            inbox,
             swarm,
             peers: HashMap::new(),
             config,
             message_tx,
-        })
+        }))
     }
 
-    /// Start the P2P client and listen on configured addresses
-    pub async fn start(&mut self) -> P2PResult<()> {
-        info!("Starting P2P client...");
-
-        // Listen on configured addresses
+    /// Run the P2P client and listen on configured addresses
+    async fn run(&mut self) -> P2PResult<()> {
         for addr in &self.config.listen_addresses {
             self.swarm.listen_on(addr.clone())?;
             info!("Listening on: {}", addr);
@@ -182,82 +242,102 @@ impl P2PClient {
                 .map_err(|e| P2PError::Network(format!("Bootstrap failed: {}", e)))?;
         }
 
-        Ok(())
-    }
-
-    /// Run the event loop for the P2P client
-    pub async fn run(&mut self) -> P2PResult<()> {
+        // main event loop
         loop {
-            match self.swarm.select_next_some().await {
-                SwarmEvent::NewListenAddr { address, .. } => {
-                    info!("Listening on {}", address);
-                }
-                SwarmEvent::Behaviour(event) => {
-                    self.handle_behaviour_event(event).await;
-                }
-                SwarmEvent::ConnectionEstablished {
-                    peer_id, endpoint, ..
-                } => {
-                    info!(
-                        "Connection established with peer: {} at {}",
-                        peer_id,
-                        endpoint.get_remote_address()
-                    );
-                    self.peers
-                        .entry(peer_id)
-                        .or_insert_with(|| PeerInfo::new(peer_id))
-                        .set_connected(true);
-                }
-                SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
-                    debug!(
-                        "Connection closed with peer: {} (cause: {:?})",
-                        peer_id, cause
-                    );
-                    if let Some(peer) = self.peers.get_mut(&peer_id) {
-                        peer.set_connected(false);
+            tokio::select! {
+                swarm_event = self.swarm.select_next_some() => match swarm_event {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        info!("Listening on {}", address);
+                    }
+                    SwarmEvent::Behaviour(event) => {
+                        self.handle_behaviour_event(event).await;
+                    }
+                    SwarmEvent::ConnectionEstablished {
+                        peer_id, endpoint, ..
+                    } => {
+                        info!(
+                            "Connection established with peer: {} at {}",
+                            peer_id,
+                            endpoint.get_remote_address()
+                        );
+                        self.peers
+                            .entry(peer_id)
+                            .or_insert_with(|| PeerInfo::new(peer_id))
+                            .set_connected(true);
+                    }
+                    SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
+                        debug!(
+                            "Connection closed with peer: {} (cause: {:?})",
+                            peer_id, cause
+                        );
+                        if let Some(peer) = self.peers.get_mut(&peer_id) {
+                            peer.set_connected(false);
+                        }
+                    }
+                    SwarmEvent::IncomingConnection {
+                        local_addr,
+                        send_back_addr,
+                        ..
+                    } => {
+                        debug!(
+                            "Incoming connection from {} to {}",
+                            send_back_addr, local_addr
+                        );
+                    }
+                    SwarmEvent::OutgoingConnectionError {
+                        peer_id: Some(peer_id),
+                        error,
+                        ..
+                    } => {
+                        warn!("Outgoing connection error to {}: {}", peer_id, error);
+                        if let Some(peer) = self.peers.get_mut(&peer_id) {
+                            peer.increment_attempts();
+                        }
+                    }
+                    SwarmEvent::OutgoingConnectionError {
+                        peer_id: None,
+                        error,
+                        ..
+                    } => {
+                        warn!("Outgoing connection error (unknown peer): {}", error);
+                    }
+                    SwarmEvent::IncomingConnectionError {
+                        local_addr,
+                        send_back_addr,
+                        error,
+                        ..
+                    } => {
+                        warn!(
+                            "Incoming connection error from {} to {}: {}",
+                            send_back_addr, local_addr, error
+                        );
+                    }
+                    _ => {}
+                },
+                Some(actor_message) = self.inbox.recv() => {
+                    match actor_message {
+                        P2PActorMessage::GetLocalPeerId { result } => {
+                            result.send(*self.swarm.local_peer_id()).expect("failed to send result");
+                        }
+                        P2PActorMessage::Stop => {
+                            break
+                        }
+                        P2PActorMessage::GetPeers { result } => {
+                            result.send(self.peers.values().cloned().collect()).expect("failed to send result");
+                        }
+                        P2PActorMessage::GetConnectedPeers { result } => {
+                            result.send(self.peers.values().filter(|p| p.connected).cloned().collect()).expect("failed to send result");
+                        }
+                        P2PActorMessage::GetTeranodePeers { result } => {
+                            result.send(self.peers.values().filter(|p| p.supports_teranode).cloned().collect()).expect("failed to send result");
+                        }
+                        _ => {}
                     }
                 }
-                SwarmEvent::IncomingConnection {
-                    local_addr,
-                    send_back_addr,
-                    ..
-                } => {
-                    debug!(
-                        "Incoming connection from {} to {}",
-                        send_back_addr, local_addr
-                    );
-                }
-                SwarmEvent::OutgoingConnectionError {
-                    peer_id: Some(peer_id),
-                    error,
-                    ..
-                } => {
-                    warn!("Outgoing connection error to {}: {}", peer_id, error);
-                    if let Some(peer) = self.peers.get_mut(&peer_id) {
-                        peer.increment_attempts();
-                    }
-                }
-                SwarmEvent::OutgoingConnectionError {
-                    peer_id: None,
-                    error,
-                    ..
-                } => {
-                    warn!("Outgoing connection error (unknown peer): {}", error);
-                }
-                SwarmEvent::IncomingConnectionError {
-                    local_addr,
-                    send_back_addr,
-                    error,
-                    ..
-                } => {
-                    warn!(
-                        "Incoming connection error from {} to {}: {}",
-                        send_back_addr, local_addr, error
-                    );
-                }
-                _ => {}
             }
         }
+        // clean up?
+        Ok(())
     }
 
     /// Handle behavior-specific events
@@ -435,34 +515,6 @@ impl P2PClient {
                 }
             }
         }
-    }
-
-    /// Get all discovered peers
-    pub fn get_peers(&self) -> Vec<PeerInfo> {
-        self.peers.values().cloned().collect()
-    }
-
-    /// Get connected peers only
-    pub fn get_connected_peers(&self) -> Vec<PeerInfo> {
-        self.peers
-            .values()
-            .filter(|p| p.connected)
-            .cloned()
-            .collect()
-    }
-
-    /// Get peers that support the Teranode protocol
-    pub fn get_teranode_peers(&self) -> Vec<PeerInfo> {
-        self.peers
-            .values()
-            .filter(|p| p.supports_teranode)
-            .cloned()
-            .collect()
-    }
-
-    /// Get the local peer ID
-    pub fn local_peer_id(&self) -> &PeerId {
-        self.swarm.local_peer_id()
     }
 
     /// Subscribe to all gossipsub messages
