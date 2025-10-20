@@ -73,6 +73,11 @@ enum Commands {
         #[command(subcommand)]
         target: ListenTarget,
     },
+    /// Get information about a gossipsub topic
+    Topic {
+        /// Topic name to query
+        topic: String,
+    },
     /// Show information about the local node
     Info,
 }
@@ -168,6 +173,9 @@ async fn main() -> Result<()> {
         }
         Commands::Listen { target } => {
             run_listen(client, target).await?;
+        }
+        Commands::Topic { topic } => {
+            show_topic_info(&client, &topic);
         }
         Commands::Info => {
             show_info(&client);
@@ -291,6 +299,28 @@ async fn listen_blocks(mut client: P2PClient, duration_secs: u64) -> Result<()> 
     }
 
     Ok(())
+}
+
+fn show_topic_info(client: &P2PClient, topic: &str) {
+    // Construct the full topic name with protocol prefix
+    let full_topic = format!("{}/{}", client.protocol_id(), topic);
+
+    println!("\n=== Topic Information ===");
+    println!("Topic: {}", topic);
+    println!("Full Topic: {}", full_topic);
+
+    let peer_count = client.get_topic_peer_count(&full_topic);
+    println!("Subscribed Peers: {}", peer_count);
+
+    if peer_count > 0 {
+        let peers = client.get_topic_peers(&full_topic);
+        println!("\nPublisher Peer IDs:");
+        for (i, peer_id) in peers.iter().enumerate() {
+            println!("  {}. {}", i + 1, peer_id);
+        }
+    } else {
+        println!("(No peers currently subscribed to this topic)");
+    }
 }
 
 fn show_info(client: &P2PClient) {

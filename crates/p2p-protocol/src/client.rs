@@ -470,6 +470,42 @@ impl P2PClient {
         self.message_tx.subscribe()
     }
 
+    /// Get all topics the node is subscribed to
+    pub fn get_topics(&self) -> Vec<String> {
+        self.swarm
+            .behaviour()
+            .gossipsub
+            .topics()
+            .map(|t| t.to_string())
+            .collect()
+    }
+
+    /// Get all peers subscribed to a specific topic
+    pub fn get_topic_peers(&self, topic: &str) -> Vec<PeerId> {
+        use libp2p::gossipsub::IdentTopic;
+
+        let ident_topic = IdentTopic::new(topic);
+        let topic_hash = ident_topic.hash();
+
+        self.swarm
+            .behaviour()
+            .gossipsub
+            .all_peers()
+            .filter(|(_, topics)| topics.contains(&&topic_hash))
+            .map(|(peer_id, _)| *peer_id)
+            .collect()
+    }
+
+    /// Get number of peers subscribed to a specific topic
+    pub fn get_topic_peer_count(&self, topic: &str) -> usize {
+        self.get_topic_peers(topic).len()
+    }
+
+    /// Get the protocol ID
+    pub fn protocol_id(&self) -> String {
+        self.config.protocol_id()
+    }
+
     /// Load or generate a keypair based on configuration
     fn load_or_generate_keypair(config: &P2PConfig) -> P2PResult<Keypair> {
         // Try to load from hex string first
